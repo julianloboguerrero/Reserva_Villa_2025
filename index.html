@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Reserva Casa 2025</title>
+  <style>
+    body { background: #1e1e1e; color: white; font-family: sans-serif; padding: 20px; }
+    h1 { text-align: center; margin-bottom: 20px; }
+    #persona-selector { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; }
+    #persona-selector button {
+      padding: 8px 14px; background: transparent; border: 2px solid var(--color);
+      color: var(--color); border-radius: 6px; font-weight: bold; cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    #persona-selector button:hover,
+    #persona-selector button.active { background: var(--color); color: black; }
+
+    #calendar {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;
+      max-width: 1200px; margin: 0 auto;
+    }
+    .month {
+      background: #2a2a2a; border: 1px solid #444; border-radius: 8px; padding: 10px;
+    }
+    .month h2 { text-align: center; color: #f44; margin-bottom: 8px; }
+    .weekdays, .days {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; font-size: 12px;
+    }
+    .weekdays div { text-align: center; color: #888; }
+    .days button {
+      background: transparent; border: none; color: white; padding: 4px 0;
+      cursor: pointer; border-radius: 4px; transition: background 0.2s;
+    }
+    .days button:hover { background: #444; }
+    .days button.dia-julian    { background: #f44336; }
+    .days button.dia-antonio   { background: #2196f3; }
+    .days button.dia-pablo     { background: #4caf50; }
+    .days button.dia-alquileres{ background: #ff9800; }
+  </style>
+</head>
+<body>
+  <h1>Calendario 2025</h1>
+  <div id="persona-selector">
+    <button data-persona="julian"    style="--color:#f44336">Julián</button>
+    <button data-persona="antonio"   style="--color:#2196f3">Antonio</button>
+    <button data-persona="pablo"     style="--color:#4caf50">Pablo</button>
+    <button data-persona="alquileres" style="--color:#ff9800">Alquileres</button>
+  </div>
+  <div id="calendar"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+    import {
+      getFirestore, collection, getDocs, onSnapshot,
+      setDoc, deleteDoc, doc
+    } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+
+    // ————— Configuración Firebase —————
+    const firebaseConfig = {
+      apiKey: "AIzaSyDm_UCMP8-vkUeJ61vYp6Ju38C9s-9r4a8",
+      authDomain: "reservas-villa-2025.firebaseapp.com",
+      projectId: "reservas-villa-2025",
+      storageBucket: "reservas-villa-2025.appspot.com",
+      messagingSenderId: "693220668223",
+      appId: "1:693220668223:web:f7d84a6f5dd94b0f98198a",
+      measurementId: "G-JRP6YT4MGH"
+    };
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+    console.log("🔥 Firebase inicializado:", app.name, db ? "db OK" : "db FAIL");
+
+    // ————— Estado —————
+    let personaActiva = null;
+    const reservas = {}; // fechas → persona
+
+    // ————— Función de renderizado —————
+    function renderCalendar() {
+      const calendar = document.getElementById('calendar');
+      calendar.innerHTML = '';
+      const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                          'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+      const daysInMonth = (y,m) => new Date(y,m+1,0).getDate();
+      const startDay   = (y,m) => new Date(y,m,1).getDay();
+
+      for (let m = 0; m < 12; m++) {
+        const md = document.createElement('div'); md.className = 'month';
+        const h2 = document.createElement('h2'); h2.textContent = monthNames[m];
+        md.appendChild(h2);
+
+        const wd = document.createElement('div'); wd.className = 'weekdays';
+        ['L','M','X','J','V','S','D'].forEach(d => {
+          const c = document.createElement('div'); c.textContent = d;
+          wd.appendChild(c);
+        });
+        md.appendChild(wd);
+
+        const dd = document.createElement('div'); dd.className = 'days';
+        const offset = (startDay(2025,m) + 6) % 7;
+        for (let i=0; i<offset; i++) dd.appendChild(document.createElement('div'));
+
+        const total = daysInMonth(2025,m);
+        for (let d=1; d<=total; d++) {
+          const btn = document.createElement('button');
+          const mm = String(m+1).padStart(2,'0'),
+                ddStr = String(d).padStart(2,'0'),
+                fecha = `2025-${mm}-${ddStr}`;
+          btn.textContent = d;
+          btn.setAttribute('data-fecha', fecha);
+
+          // Aplica si ya existe en memoria
+          if (reservas[fecha]) {
+            btn.classList.add('dia-'+reservas[fecha]);
+          }
+
+          btn.addEventListener('click', async () => {
+            if (!personaActiva) return alert('Selecciona una persona primero.');
+            const clase = 'dia-'+personaActiva;
+            const ref   = doc(db,'reservas',fecha);
+
+            if (btn.classList.contains(clase)) {
+              btn.classList.remove(clase);
+              delete reservas[fecha];
+              await deleteDoc(ref);
+            } else {
+              const ocupada = [...btn.classList].some(c=>c.startsWith('dia-'));
+              if (!ocupada) {
+                btn.classList.add(clase);
+                reservas[fecha] = personaActiva;
+                await setDoc(ref, { persona: personaActiva });
+              } else alert('Día reservado por otro.');
+            }
+          });
+
+          dd.appendChild(btn);
+        }
+        md.appendChild(dd);
+        calendar.appendChild(md);
+      }
+    }
+
+    // ————— Al cargar la página —————
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Selector de persona
+      document.querySelectorAll('#persona-selector button')
+        .forEach(b => b.addEventListener('click', () => {
+          document.querySelectorAll('#persona-selector button')
+            .forEach(x => x.classList.remove('active'));
+          b.classList.add('active');
+          personaActiva = b.getAttribute('data-persona');
+        }));
+
+      // Prueba de conexión inicial
+      try {
+        const snapshot = await getDocs(collection(db,'reservas'));
+        console.log("📥 getDocs snapshot size:", snapshot.size);
+        snapshot.forEach(doc => reservas[doc.id] = doc.data().persona);
+      } catch(e) {
+        console.error("❌ Error al cargar getDocs:", e);
+      }
+
+      // Listener en tiempo real
+      onSnapshot(collection(db,'reservas'),
+        changes => {
+          changes.docChanges().forEach(ch => {
+            console.log("🔄 cambio:", ch.type, ch.doc.id, ch.doc.data());
+            if (ch.type === 'added' || ch.type === 'modified') {
+              reservas[ch.doc.id] = ch.doc.data().persona;
+            }
+            if (ch.type === 'removed') {
+              delete reservas[ch.doc.id];
+            }
+          });
+          renderCalendar();
+        },
+        err => {
+          console.error("❌ onSnapshot error:", err);
+          renderCalendar();
+        }
+      );
+
+      // Primer render (aunque no haya datos)
+      renderCalendar();
+    });
+  </script>
+</body>
+</html>
